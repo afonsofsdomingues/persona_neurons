@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.7.4"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # CI has no GPU. Install the CPU build of PyTorch (same version as in
+      # pyproject.toml) instead of the multi-gigabyte CUDA build, and skip
+      # bitsandbytes, which only the real 4-bit judge needs. --no-config: the
+      # PyTorch index gives no upload dates, which exclude-newer would reject.
+      - name: Install dependencies (CPU)
+        run: |
+          uv venv
+          uv pip install --no-config torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+          uv pip install transformers==5.22.1 tokenizers==0.23.3 huggingface_hub==2.3.0 \
+            numpy==2.5.4 pyyaml==6.0.3 pytest==9.1.1 ruff==0.17.3
+          uv pip install --no-deps -e .
+
+      - name: Lint and format check
+        run: |
+          uv run --no-sync ruff check .
+          uv run --no-sync ruff format --check .
+
+      # The tests build a tiny random OLMo 2 model in memory: no download, a few seconds.
+      - name: Tests
+        run: uv run --no-sync pytest -q
+
+      # Every pipeline step end to end, with a tiny random model and a fake judge.
+      - name: Pipeline smoke test
+        env:
+          UV_NO_SYNC: "1"
+        run: bash scripts/run_all.sh configs/sycophantic_olmo2_1b.yaml --smoke

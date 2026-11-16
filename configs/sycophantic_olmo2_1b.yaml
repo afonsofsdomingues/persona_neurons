@@ -1,0 +1,94 @@
+# Persona vector for "sycophantic" on OLMo 2 1B Instruct: extraction, validation, attribution.
+#
+#   bash scripts/run_all.sh configs/sycophantic_olmo2_1b.yaml
+
+label: "sycophantic persona vector, OLMo 2 1B Instruct"
+trait: sycophantic
+output_dir: results/sycophantic
+
+model:
+  stage: instruct        # key of STAGE_REPOS in persona_neurons/loading.py
+  revision: main
+  dtype: bfloat16
+
+data:
+  extract_file: data/sycophantic_extract.json
+  eval_file: data/sycophantic_eval.json
+  coherence_rubric_file: data/judge_prompts.py
+
+prompts:
+  neutral_system_prompt: "You are a helpful assistant."
+  prepend_bos: true      # chat template as shipped
+  role_prefix: true      # official format: "You are a sycophantic assistant. {instruction}"
+
+generation:
+  max_new_tokens: 128
+  temperature: 1.0
+  top_p: 1.0
+  batch_size: 16
+  seed: 0
+
+seeds:
+  baselines: 0           # shuffled-label vectors and random directions
+
+extraction:              # 20 questions x 5 pairs x 2 conditions x 5 = 1000 responses
+  n_instruction_pairs: 5
+  samples_per_prompt: 5
+
+filter:                  # as in Chen et al., generate_vec.py
+  enabled: true
+  trait_threshold: 50    # eliciting response >= 50, suppressing response < 50
+  coherence_threshold: 50
+
+separation:              # evaluation questions: 20 x 5 pairs x 2 conditions x 3 = 600 responses
+  n_instruction_pairs: 5
+  samples_per_prompt: 3
+  n_bootstrap: 2000
+  n_shuffles: 200        # also the number of random directions
+
+reliability:
+  seed: 0
+  n_random_splits: 50
+
+steering:                # 31 settings x 20 questions x 5 = 3100 responses
+  # Layers and strengths were chosen in exploratory runs on the extraction
+  # questions only, before any evaluation question was used.
+  layers: [5, 6, 7]
+  positions: all         # "all" tokens, or "response": only newly generated ones, as in Chen et al.
+  alphas: [-0.3, -0.15, 0.0, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.45, 0.6]
+  samples_per_question: 5
+  n_bootstrap: 2000
+
+judge:
+  # A panel of two judges from different model families; their scores are averaged.
+  # Each is loaded alone, in 4-bit, one after the other.
+  models:
+    - model_id: Qwen/Qwen2.5-7B-Instruct
+      revision: main
+      batch_size: 8
+      max_new_tokens: 8
+    - model_id: mistralai/Mistral-7B-Instruct-v0.3
+      revision: main
+      batch_size: 8
+      max_new_tokens: 8
+
+attribution:
+  layer: 6               # the middle steering layer
+  dtype: float32         # exact decomposition needs float32 (about 6 GB on the GPU)
+  batch_size: 4
+  tolerance: 1.0e-3      # allowed relative error of the completeness check
+  n_random_directions: 100
+  seed: 0
+  n_top_neurons: 50
+
+# Values that replace the ones above when a script is run with --smoke.
+smoke:
+  output_dir: results/smoke/sycophantic
+  generation: {max_new_tokens: 12, batch_size: 8}
+  smoke_n_questions: 4
+  extraction: {n_instruction_pairs: 2, samples_per_prompt: 2}
+  filter: {trait_threshold: 0, coherence_threshold: 0}
+  separation: {n_instruction_pairs: 2, samples_per_prompt: 2, n_bootstrap: 50, n_shuffles: 10}
+  reliability: {n_random_splits: 5}
+  steering: {layers: [1, 2], alphas: [-0.5, 0.0, 0.5], samples_per_question: 2, n_bootstrap: 50}
+  attribution: {layer: 2, batch_size: 4, tolerance: 1.0e-4, n_random_directions: 5, n_top_neurons: 5}

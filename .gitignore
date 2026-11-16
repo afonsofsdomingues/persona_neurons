@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Run outputs (generations, activations, vectors, attribution tables)
+results/
+
+# Local notes and scratch work
+local/
